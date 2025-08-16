@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fake News Detector — MVP</title>
+<style>
+  :root{
+    --bg:#0f1220; --card:#171a2b; --muted:#9aa4bc; --text:#e9edf7; --accent:#6bcf9b;
+    --warn:#f5c451; --danger:#ff6b6b; --ok:#60a5fa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(180deg,#0b0e1a, #101428);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:1100px;margin:40px auto;padding:0 16px}
+  header{display:flex;align-items:center;gap:16px;margin-bottom:20px;flex-wrap:wrap}
+  header h1{font-size:1.4rem;margin:0}
+  header .badge{background:#1b2140;color:#9fb3ff;border:1px solid #2a3466;padding:6px 10px;border-radius:999px;font-size:.8rem}
+  .grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}
+  @media (max-width:960px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid #232744;border-radius:16px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+  label{font-size:.9rem;color:var(--muted);display:block;margin-bottom:6px}
+  textarea, input[type="url"]{
+    width:100%;background:#0f1327;color:var(--text);border:1px solid #2a3466;border-radius:12px;
+    padding:12px 14px;font-size:0.95rem;outline:none;resize:vertical;min-height:160px;
+  }
+  input[type="url"]{min-height:auto}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  button{
+    background:#1f284d;color:#dbe5ff;border:1px solid #34407a;border-radius:12px;padding:10px 14px;
+    cursor:pointer;font-weight:600;transition:.15s transform,.15s background;
+  }
+  button:hover{transform:translateY(-1px);background:#263066}
+  button.primary{background:#1d3b2f;border-color:#2f6b53;color:#c2ffe1}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .chip{border:1px solid #2a3466;background:#121733;border-radius:999px;padding:6px 10px;font-size:.8rem;color:#b9c3e3}
+  .chip.warn{border-color:#5a4a1f;color:#f8e6b5;background:#201a09}
+  .chip.bad{border-color:#5a1f1f;color:#ffc9c9;background:#2a0f12}
+  .chip.good{border-color:#1f3f5a;color:#c9e6ff;background:#0c1a24}
+  .scoreWrap{display:flex;align-items:center;gap:16px;margin-top:6px}
+  .gauge{--p:0; width:120px;height:120px;border-radius:50%;background:
+    conic-gradient(var(--col) calc(var(--p)*1%), #222844 0);
+    display:grid;place-items:center;border:5px solid #0e1330}
+  .gauge span{font-weight:800;font-size:1.4rem}
+  .legend{font-size:.9rem;color:var(--muted)}
+  .legend b{color:var(--text)}
+  .results{line-height:1.6}
+  .hl{background:linear-gradient(90deg, rgba(255,80,80,.25), rgba(255,80,80,.1));border-bottom:2px dotted #ff8080}
+  .footer{margin-top:30px;font-size:.85rem;color:#9aa4bc}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+  .split{display:flex;gap:10px;flex-wrap:wrap}
+  .pill{padding:4px 8px;border-radius:999px;border:1px solid #2a3466;color:#cbd5f7;background:#121733}
+  .small{font-size:.85rem}
+  .muted{color:var(--muted)}
+  .divider{height:1px;background:#232744;margin:16px 0}
+  .copy{background:#14233c;border-color:#254875}
+  .link{color:#a7d0ff;text-decoration:underline;cursor:pointer}
+  .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+  .kpi div{background:#0e1430;border:1px solid #23305a;border-radius:10px;padding:10px;text-align:center}
+  .kpi b{display:block;font-size:1.1rem}
+  .toast{position:fixed;bottom:16px;right:16px;background:#1d2a52;border:1px solid #2b3f78;padding:10px 14px;border-radius:10px;display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🧭 Fake News Detector</h1>
+    <span class="badge">Client-side MVP • No login</span>
+  </header>
+
+  <div class="grid">
+    <section class="card">
+      <label for="url">Source URL (optional)</label>
+      <input id="url" type="url" placeholder="https://example.com/story" />
+
+      <div style="height:10px"></div>
+      <label for="text">Paste the article, claim, or snippet</label>
+      <textarea id="text" placeholder="Paste text here…"></textarea>
+
+      <div style="height:12px"></div>
+      <div class="row">
+        <button id="analyze" class="primary">Analyze</button>
+        <button id="reset">Reset</button>
+        <button id="share" class="copy">Copy Share Link</button>
+        <button id="export" class="copy">Export JSON</button>
+      </div>
+      <div class="chips small">
+        <span class="pill">Local only</span>
+        <span class="pill">Explainable scoring</span>
+        <span class="pill">Highlight risks</span>
+      </div>
+    </section>
+
+    <aside class="card results">
+      <div class="row">
+        <div class="gauge" id="gauge" title="Higher = more risk"><span id="score">0</span></div>
+        <div>
+          <div class="legend">Risk level: <b id="level">—</b></div>
+          <div class="kpi">
+            <div><b id="kpi-caps">0%</b><span class="muted small">ALL-CAPS Words</span></div>
+            <div><b id="kpi-punct">0</b><span class="muted small">Excessive Punctuations</span></div>
+            <div><b id="kpi-click">0</b><span class="muted small">Clickbait Hits</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+      <div>
+        <div class="muted small">Rationale (weighted signals)</div>
+        <div id="signals" class="chips"></div>
+      </div>
+
+      <div class="divider"></div>
+      <div>
+        <div class="muted small">Annotated text</div>
+        <div id="annotated" style="margin-top:6px;background:#0c1026;border:1px solid #1f2a57;border-radius:12px;padding:12px;min-height:80px;"></div>
+      </div>
+
+      <div class="divider"></div>
+      <div>
+        <div class="muted small">Verify with ChatGPT</div>
+        <div class="small" style="margin-top:6px">
+          <span class="muted">Tip:</span> Click to copy a fact-checking prompt; paste into ChatGPT:
+        </div>
+        <pre id="verify" class="mono" style="white-space:pre-wrap;background:#0f1327;border:1px solid #2a3466;border-radius:12px;padding:12px;margin-top:6px;cursor:pointer"></pre>
+        <div class="small muted">Or ask: “Show me primary sources, official statements, and reputable fact-checks that confirm/contradict key claims.”</div>
+      </div>
+    </aside>
+  </div>
+
+  <section class="card footer">
+    <div class="small">
+      <b>Disclaimer:</b> This tool flags signals correlated with misinformation but does not determine truth. Always corroborate with reliable sources.
+    </div>
+  </section>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+/** ---------- Utilities ---------- **/
+const $ = sel => document.querySelector(sel);
+const clamp = (v,min,max)=> Math.max(min, Math.min(max, v));
+const showToast = (msg)=>{ const t=$("#toast"); t.textContent=msg; t.style.display="block"; setTimeout(()=>t.style.display="none",1800); };
+const encodeShare = (data)=> {
+  const json = JSON.stringify(data);
+  return btoa(unescape(encodeURIComponent(json)));
+};
+const decodeShare = (hash)=> {
+  try { return JSON.parse(decodeURIComponent(escape(atob(hash)))); } catch(e){ return null; }
+};
+
+/** ---------- Heuristics & Lexicons ---------- **/
+const LEX = {
+  clickbait: [
+    "shocking","you won't believe","what happens next","exposed","revealed",
+    "breaks the internet","jaw-dropping","game changer","unbelievable","no one is talking about",
+    "secret they don't want you to know","destroyed","obliterated","goes viral","must see"
+  ],
+  certainty: ["guaranteed","undeniable","irrefutable","proven","always","never","no doubt","everyone knows"],
+  weasel: ["many experts say","sources say","it is believed","rumors suggest","people are saying","reportedly","allegedly"],
+  hedges: ["might","may","could","possibly","appears","reportedly","suggests","claims","seems"]
+};
+const RISK_TLDS = ["zip","review","click","country","gq","tk","ml","ga","cf","top","work","biz","info"];
+const DATE_REGEX = /\b(?:\d{1,2}\s(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*|\d{4}-\d{2}-\d{2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s\d{1,2},\s\d{4})\b/gi;
+const NAME_LIKE = /\b([A-Z][a-z]+(?:\s[A-Z][a-z]+)+)\b/g; // crude proper name finder
+const NUMBER = /\b\d{2,}(?:\.\d+)?%?|\b\d+,\d{3,}\b/g;
+
+/** ---------- Scoring ---------- **/
+function analyze(inputText, url){
+  const text = (inputText||"").trim();
+  const lower = text.toLowerCase();
+
+  // 1) Text features
+  const words = text.split(/\s+/).filter(Boolean);
+  const wordCount = words.length || 1;
+  const allCapsWords = (text.match(/\b[A-Z]{3,}\b/g)||[]).length;
+  const capsRatio = allCapsWords / wordCount;
+
+  const exclam = (text.match(/[!]/g)||[]).length;
+  const quest = (text.match(/[?]/g)||[]).length;
+  const multiPunct = (text.match(/([!?])\1{1,}/g)||[]).length;
+
+  const clickHits = LEX.clickbait.filter(p=> lower.includes(p)).length;
+  const certaintyHits = LEX.certainty.filter(p=> lower.includes(p)).length;
+  const weaselHits = LEX.weasel.filter(p=> lower.includes(p)).length;
+
+  const quotes = (text.match(/“|”|\"/g)||[]).length/2;
+  const numbers = (text.match(NUMBER)||[]).length;
+  const names = (text.match(NAME_LIKE)||[]).length;
+  const dates = (text.match(DATE_REGEX)||[]).length;
+
+  // 2) Source URL features (no network calls)
+  let domainRisk=0, urlNotes=[];
+  if(url){
+    try{
+      const u = new URL(url);
+      const host = u.hostname.toLowerCase();
+      const parts = host.split(".");
+      const tld = parts.at(-1);
+      if(RISK_TLDS.includes(tld)){ domainRisk+=12; urlNotes.push(`Suspicious TLD .${tld}`); }
+      if(host.includes("--") || host.includes("-")){ domainRisk+=6; urlNotes.push("Multiple hyphens in domain"); }
+      if(host.length>28){ domainRisk+=4; urlNotes.push("Unusually long domain"); }
+      if(u.protocol!=="https:"){ domainRisk+=6; urlNotes.push("Not HTTPS"); }
+    }catch(e){ domainRisk+=5; urlNotes.push("Invalid URL"); }
+  }
+
+  // 3) Simple evidence heuristics
+  // More quotes & named entities generally correlate with reporting; total absence can be a flag (but not decisive)
+  let evidenceScore = 0;
+  if(quotes>=2) evidenceScore += 6; else if(quotes===0) evidenceScore -= 6;
+  if(names>=3)  evidenceScore += 6; else if(names===0) evidenceScore -= 4;
+  if(numbers>=2) evidenceScore += 4;
+  if(dates>=1)   evidenceScore += 3;
+
+  // 4) Risk aggregation (weights tuned for MVP)
+  let risk = 0;
+  risk += clamp(capsRatio*100,0,14);          // up to 14
+  risk += clamp(exclam*1.8 + quest*1.2,0,14); // up to 14
+  risk += clamp(multiPunct*6,0,12);           // up to 12
+  risk += clamp(clickHits*6,0,24);            // up to 24
+  risk += clamp(certaintyHits*4,0,16);        // up to 16
+  risk += clamp(weaselHits*4,0,14);           // up to 14
+  risk += clamp(domainRisk,0,20);             // up to 20
+  risk -= clamp(evidenceScore, -12, 12);      // subtract evidence
+  risk = clamp(Math.round(risk), 0, 100);
+
+  // 5) Build rationale
+  const sig = [];
+  if(clickHits>0) sig.push({t:`Clickbait phrases ×${clickHits}`, w:clickHits*6, c:"bad"});
+  if(capsRatio>0.03) sig.push({t:`ALL-CAPS ratio ${(capsRatio*100).toFixed(1)}%`, w:Math.round(clamp(capsRatio*100,0,14)), c:"bad"});
+  if(exclam+quest>4) sig.push({t:`Excessive punctuation (${exclam}!/${quest}?)`, w:Math.round(clamp(exclam*1.8+quest*1.2,0,14)), c:"bad"});
+  if(multiPunct>0) sig.push({t:`Repeated punctuation ×${multiPunct}`, w:multiPunct*6, c:"bad"});
+  if(certaintyHits>0) sig.push({t:`Over-certainty ×${certaintyHits}`, w:certaintyHits*4, c:"warn"});
+  if(weaselHits>0) sig.push({t:`Weasel phrases ×${weaselHits}`, w:weaselHits*4, c:"warn"});
+  if(urlNotes.length) sig.push({t:`URL: ${urlNotes.join("; ")}`, w:domainRisk, c: domainRisk>10?"bad":"warn"});
+
+  if(evidenceScore>0) sig.push({t:`Evidence signals +${evidenceScore}`, w:-evidenceScore, c:"good"});
+  else if(evidenceScore<0) sig.push({t:`Sparse evidence ${evidenceScore}`, w:-evidenceScore, c:"warn"});
+
+  // 6) Annotation — highlight risky phrases
+  let annotated = text;
+  const hl = (re) => {
+    annotated = annotated.replace(re, m=> `<span class="hl" title="Flagged">${m}</span>`);
+  };
+  LEX.clickbait.forEach(p=>{
+    const re = new RegExp(p.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'gi');
+    hl(re);
+  });
+  [...LEX.certainty, ...LEX.weasel].forEach(p=>{
+    const re = new RegExp(`\\b${p.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}\\b`, 'gi');
+    hl(re);
+  });
+  hl(/[!?]{2,}/g);
+  hl(/\b[A-Z]{3,}\b/g);
+
+  return {
+    risk,
+    capsRatio, exclam, quest, multiPunct, clickHits, certaintyHits, weaselHits,
+    quotes, numbers, names, dates,
+    evidenceScore, domainRisk, urlNotes,
+    sig, annotated, wordCount
+  };
+}
+
+/** ---------- UI Wiring ---------- **/
+function setGauge(score){
+  const gauge = $("#gauge");
+  const sEl = $("#score");
+  const lvl = $("#level");
+  const pct = score; // 0..100
+  let col = "var(--ok)";
+  let label = "Low";
+  if(score>=35 && score<65){ col="var(--warn)"; label="Medium"; }
+  if(score>=65){ col="var(--danger)"; label="High"; }
+  gauge.style.setProperty("--p", pct);
+  gauge.style.setProperty("--col", col);
+  gauge.querySelector("span").textContent = score;
+  sEl.textContent = score;
+  lvl.textContent = label + " risk";
+}
+
+function renderSignals(sig){
+  const box = $("#signals");
+  box.innerHTML = "";
+  if(!sig.length){ box.innerHTML = '<span class="chip">No major signals</span>'; return; }
+  sig.forEach(s=>{
+    const el = document.createElement("span");
+    el.className = `chip ${s.c}`;
+    el.textContent = `${s.t} (${s.w>0?'+':''}${s.w})`;
+    box.appendChild(el);
+  });
+}
+
+function updateKPIs(a){
+  $("#kpi-caps").textContent = (a.capsRatio*100).toFixed(1)+"%";
+  $("#kpi-punct").textContent = a.exclam + a.quest + a.multiPunct;
+  $("#kpi-click").textContent = a.clickHits;
+}
+
+function buildVerifyPrompt(text, url, score, sig){
+  const top = `Act as a professional fact-checker. Evaluate the following claim/article for accuracy. 
+Return:
+1) Key checkable claims
+2) The strongest corroborating/contradictory sources (primary if possible)
+3) A confidence rating with rationale
+4) Corrections if misleading
+Cite sources with titles + links.`;
+
+  const features = sig.map(s=>`- ${s.t} (${s.w>0?'+':''}${s.w})`).join("\n");
+  return `${top}
+
+Source URL: ${url||"(none provided)"}
+
+Heuristic risk score: ${score}/100
+Notable signals:
+${features||"(none)"}
+
+Text to verify:
+"""
+${text}
+"""`;
+}
+
+function run(){
+  const url = $("#url").value.trim();
+  const text = $("#text").value.trim();
+  if(!text){ showToast("Please paste some text to analyze."); return; }
+  const a = analyze(text, url);
+  setGauge(a.risk);
+  renderSignals(a.sig);
+  updateKPIs(a);
+  $("#annotated").innerHTML = a.annotated || "<span class='muted small'>No text</span>";
+  const prompt = buildVerifyPrompt(text, url, a.risk, a.sig);
+  $("#verify").textContent = prompt;
+
+  // persist to localStorage
+  const payload = {url, text, analysis:a, ts: Date.now()};
+  localStorage.setItem("fnd:last", JSON.stringify(payload));
+  history.replaceState(null, "", `#${encodeShare({url, text, analysis:a})}`);
+}
+
+function resetAll(){
+  $("#url").value = "";
+  $("#text").value = "";
+  $("#signals").innerHTML = "";
+  $("#annotated").innerHTML = "";
+  $("#verify").textContent = "";
+  setGauge(0);
+  updateKPIs({capsRatio:0,exclam:0,quest:0,multiPunct:0,clickHits:0});
+  history.replaceState(null,"", location.pathname);
+}
+
+function copyShare(){
+  const url = $("#url").value.trim();
+  const text = $("#text").value.trim();
+  if(!text){ showToast("Analyze something first."); return; }
+  const a = analyze(text, url);
+  const hash = encodeShare({url, text, analysis:a});
+  const link = `${location.origin}${location.pathname}#${hash}`;
+  navigator.clipboard.writeText(link).then(()=>showToast("Share link copied"));
+}
+
+function exportJSON(){
+  const url = $("#url").value.trim();
+  const text = $("#text").value.trim();
+  if(!text){ showToast("Nothing to export."); return; }
+  const a = analyze(text, url);
+  const blob = new Blob([JSON.stringify({url,text,analysis:a}, null, 2)],{type:"application/json"});
+  const href = URL.createObjectURL(blob);
+  const aEl = document.createElement("a");
+  aEl.href = href; aEl.download = "fake-news-report.json"; aEl.click();
+  URL.revokeObjectURL(href);
+}
+
+$("#analyze").addEventListener("click", run);
+$("#reset").addEventListener("click", resetAll);
+$("#share").addEventListener("click", copyShare);
+$("#export").addEventListener("click", exportJSON);
+$("#verify").addEventListener("click", ()=> {
+  navigator.clipboard.writeText($("#verify").textContent).then(()=>showToast("Prompt copied"));
+});
+
+// Restore from hash if present
+(function init(){
+  const hash = location.hash.replace(/^#/,'');
+  if(hash){
+    const data = decodeShare(hash);
+    if(data && data.text){
+      $("#url").value = data.url||"";
+      $("#text").value = data.text||"";
+      setTimeout(run, 50);
+    }
+  } else {
+    // restore last session
+    const last = localStorage.getItem("fnd:last");
+    if(last){
+      try{
+        const d = JSON.parse(last);
+        $("#url").value = d.url||"";
+        $("#text").value = d.text||"";
+      }catch(e){}
+    }
+  }
+})();
+</script>
+</body>
+</html>
